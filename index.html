@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <script src="https://bitcoincore.tech/apps/bitcoinjs-ui/lib/bitcoinjs-lib.js"></script>
+    <script src="https://bundle.run/noble-secp256k1@1.2.14"></script>
+    <script src="https://bundle.run/buffer@6.0.3"></script>
+    <script src="https://bundle.run/varuint-bitcoin@1.1.2"></script>
+</head>
+<body>
+<script>
+    var alice = bitcoinjs.ECPair.makeRandom()
+    var alice_priv = alice.privateKey.toString( "hex" )
+    var alice_pub  = alice.publicKey.toString( "hex" )
+    console.log( "alice:", alice_pub );
+    var bob = bitcoinjs.ECPair.makeRandom()
+    var bob_priv = bob.privateKey.toString( "hex" )
+    var bob_pub  = bob.publicKey.toString( "hex" )
+    console.log( "bob:", bob_pub );
+    var packers_hash = "8cb74f633826472ec0709268506e5b9af9729ef1"
+    var saints_hash = "6fb18f274fec83bb2511460ab3dd90099c8a6b95"
+</script>
+<script>
+    function ballgameScript( alice_pub, bob_pub, packers_hash, saints_hash ) {
+        return bitcoinjs.script.fromASM(`
+            OP_IF OP_HASH160 ${ packers_hash } OP_EQUALVERIFY 
+            ${ alice_pub } OP_CHECKSIG
+            OP_ELSE OP_HASH160 ${ saints_hash } OP_EQUALVERIFY
+            ${ bob_pub } OP_CHECKSIG
+            OP_ENDIF`.trim().replace(/\s+/g, ' '),
+        );
+    }
+</script>
+<script>
+    function ballGame( alice_pub,bob_pub,packers_hash,saints_hash ) {
+        var p2wsh = bitcoinjs.payments.p2wsh({redeem: {output: 
+        ballgameScript( alice_pub, bob_pub, packers_hash, saints_hash ), network: bitcoinjs.networks.regtest}, network: 
+        bitcoinjs.networks.regtest });
+        console.log( 'P2WSH smart contract address:', p2wsh.address );
+        return p2wsh.address;
+    }
+    ballGame( alice_pub, bob_pub, packers_hash, saints_hash );
+</script>
+<script>
+    function witnessStackToScriptWitness(witness) {
+        let buffer2 = buffer.Buffer.allocUnsafe(0);
+        function writeSlice(slice) {buffer2 = buffer.Buffer.concat([buffer2, buffer.Buffer.from(slice)]);}
+        function writeVarInt(i) {
+            const currentLen = buffer2.length;
+            const varintLen = varuintBitcoin.encodingLength(i);
+            buffer2 = buffer.Buffer.concat([buffer2, buffer.Buffer.allocUnsafe(varintLen)]);
+            varuintBitcoin.encode(i, buffer2, currentLen);
+        }
+        function writeVarSlice(slice) {writeVarInt(slice.length);writeSlice(slice);}
+        function writeVector(vector) {writeVarInt(vector.length);vector.forEach(writeVarSlice);}
+        writeVector(witness);
+        return buffer2;
+    }
+</script>
+<script>
+    async function withdrawFromBallgameAddress( secret, privkey, alice_pub, bob_pub, packers_hash, saints_hash ) {
+        var txid = "4e45a279a1567a27b128eaef233d7f397d332b01646f68d6be5790715bb1fab9";
+        var txindex = 0;
+        var useraddress = "bcrt1qag4gnwz4rusfeez83he2l6xt79xxr2fhfle9xy";
+        var original_quantity_of_sats = 25000000;
+        var new_quantity_of_sats = original_quantity_of_sats - 500;
+        var witnessscript = ballgameScript( alice_pub, bob_pub, packers_hash, saints_hash );
+        var p2wsh = bitcoinjs.payments.p2wsh({redeem: {output: ballgameScript(
+        alice_pub, bob_pub, packers_hash, saints_hash ), network:
+        bitcoinjs.networks.regtest}, network: bitcoinjs.networks.regtest });
+        var scriptaddress = p2wsh.address;
+        var outputscript = "00" + bitcoinjs.crypto.sha256( witnessscript ).toString('hex');
+        var psbt = new bitcoinjs.Psbt({network: bitcoinjs.networks.regtest});
+        psbt
+        .addInput({
+            hash: txid, index: txindex, witnessScript: p2wsh.redeem.output,
+            witnessUtxo: {
+                script: buffer.Buffer.from( '0020' + bitcoinjs.crypto.sha256( buffer.Buffer.from( witnessscript, 'hex' ) ).toString( 'hex' ), 'hex' ), value: original_quantity_of_sats
+            },
+        });
+        psbt
+        .addOutput({
+            address: useraddress,
+            value: new_quantity_of_sats,
+        });
+        psbt.signInput( 0, bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( privkey, "hex" ) ) );
+        var getFinalScripts = ( txindex, input, script ) => {
+            var stack_elements = [];
+            stack_elements.push( input.partialSig[0].signature );
+            stack_elements.push( buffer.Buffer.from( secret, "hex" ) );
+            stack_elements.push( bitcoinjs.opcodes.OP_1 );
+            var witnessStack = bitcoinjs.payments.p2wsh({redeem: {output: script, input: bitcoinjs.script.compile( stack_elements )}});
+            return {finalScriptWitness: witnessStackToScriptWitness( witnessStack.witness )}
+        }
+        psbt.finalizeInput( 0, getFinalScripts );
+        setTimeout( function() {console.log( psbt.extractTransaction().toHex() );}, 1000 );
+    }
+    withdrawFromBallgameAddress( "abababababababababababababababab", alice_priv, alice_pub, bob_pub, packers_hash, saints_hash );
+</script>
+</body>
+</html>
