@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <script src="https://bitcoincore.tech/apps/bitcoinjs-ui/lib/bitcoinjs-lib.js"></script>
-    <script src="https://bundle.run/noble-secp256k1@1.2.14"></script>
     <script src="https://bundle.run/buffer@6.0.3"></script>
     <script src="https://bundle.run/varuint-bitcoin@1.1.2"></script>
 </head>
@@ -89,6 +88,8 @@
             stack_elements.push( input.partialSig[0].signature );
             stack_elements.push( buffer.Buffer.from( secret, "hex" ) );
             stack_elements.push( bitcoinjs.opcodes.OP_1 );
+            //replace the line above with this to let bob withdraw instead:
+            //stack_elements.push( bitcoinjs.opcodes.OP_0 );
             var witnessStack = bitcoinjs.payments.p2wsh({redeem: {output: script, input: bitcoinjs.script.compile( stack_elements )}});
             return {finalScriptWitness: witnessStackToScriptWitness( witnessStack.witness )}
         }
@@ -96,6 +97,8 @@
         setTimeout( function() {console.log( psbt.extractTransaction().toHex() );}, 1000 );
     }
     withdrawFromBallgameAddress( "abababababababababababababababab", alice_priv, alice_pub, bob_pub, packers_hash, saints_hash );
+    //replace the line above with this to let bob withdraw instead:
+    //withdrawFromBallgameAddress( "abababababababababababababababac", bob_priv, alice_pub, bob_pub, packers_hash, saints_hash );
 </script>
 </body>
 </html>
